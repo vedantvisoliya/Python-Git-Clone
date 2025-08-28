@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import time
+from typing import Dict, List, Tuple
 import zlib
 
 class GitObject:
@@ -39,7 +41,46 @@ class BLOB(GitObject):
 
     def get_content(self) -> bytes:
         return self.content
+    
+# Tree Object
+class Tree(GitObject):
+    def __init__(self, entries: List[Tuple[str, str, str]]):
+        self.entries = entries or []
+        content = self._serialize_entries()
+        super().__init__("tree", content)
 
+    def _serialize_entries(self) -> bytes:
+        # <mode> <name>\0<hash>
+        # 100644 main.txt\0[20 bytes of content]
+        content = b""
+        for mode, name, obj_hash in sorted(self.entries):
+            content += f"{mode} {name}\0".encode()
+            content += bytes.fromhex(obj_hash)
+
+        return content
+    
+    def add_entry(self, mode: str, name: str, obj_hash: str):
+        self.entries.append((mode, name, obj_hash))
+        self.content = self._serialize_entries()
+
+    @classmethod
+    def from_content(cls, content: bytes) -> "Tree":
+        tree = cls()
+        i = 0
+
+        while i < len(content):
+            null_idx = content.find(b"\0", i)
+            if null_idx == -1:
+                break
+            mode_name = content[i:null_idx].decode()
+            mode, name = mode_name.split(" ", 1)
+            obj_hash = content[null_idx + 1: null_idx + 21].hex()
+            tree.entries.append((mode, name, obj_hash))
+
+            i = null_idx + 21
+
+        return tree
+    
 class Repository:
     def __init__(self, path="."):
         self.path = Path(path).resolve() # git init
@@ -75,7 +116,7 @@ class Repository:
         print(f"Initialized empty pygit repository in {self.git_dir}")
         return True
     
-    def load_index(self) -> dict[str, str]:
+    def load_index(self) -> Dict[str, str]:
         if not self.index_file.exists():
             return {}
         
@@ -188,6 +229,63 @@ class Repository:
             self.add_directory(path)
         else:
             raise ValueError(f"{path} is neither a file nor a directory.")
+        
+    # create tree method
+    def create_tree_from_index(self):
+        index = self.load_index()
+
+        if not index:
+            tree = Tree()
+            return self.store_gitobject(tree)
+        
+        dirs = {}
+        files = {}
+
+        for file_path, blob_hash in index.items():
+            parts = file_path.split('/')
+
+            if (len(parts)) == 1:
+                files[parts[0]] = blob_hash
+            else:
+                dir_name = parts[0]
+
+                if dir_name not in dirs:
+                    dirs[dir_name] = {}
+
+                current = dirs[dir_name]
+                
+                for part in parts[1: -1]:
+
+                    if part not in current:
+                        current[part] = {}
+
+                    current = current[part]
+
+                current[parts[-1]] = blob_hash
+
+        def create_tree_recursive(entries_dict: Dict):
+            tree = Tree()
+
+            for name, blob_hash in entries_dict.items():
+                if isinstance(blob_hash, str):
+                    tree.add_entry("100644", name, blob_hash)
+
+                if isinstance(blob_hash, dict):
+                    subtree_hash = create_tree_recursive(blob_hash)
+                    tree.add_entry("40000", name, subtree_hash)
+                
+            return self.store_gitobject(tree)
+
+        root_entries = {**files}
+        for dir_name, dir_contents in dirs.items():
+            root_entries[dir_name] = dir_contents
+
+        return create_tree_recursive(root_entries) 
+        
+    # commit function
+    def commit(self, message: str, author: str = "PyGit User <user@pygit.com>"):
+        # create a tree object from the index (staging area).
+        tree_hash = self.create_tree_from_index()
 
 # main function 
 def main():
@@ -221,6 +319,25 @@ def main():
         help="Files and Directories to Add.",
     )
 
+    # commit command
+
+    commit_parser = subparsers.add_parser(
+        "commit",
+        help="Create a commit.",
+    )
+
+    commit_parser.add_argument(
+        "-m", 
+        "--message",
+        required=True,
+        help="Commit Message.",
+    )
+
+    commit_parser.add_argument(
+        "--author",
+        help="Author name and email.",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -243,6 +360,14 @@ def main():
                 return
             for path in args.paths:
                 repo.add_path(path)
+        elif args.command == "commit":
+            if not repo.git_dir.exists():
+                print("Not a git repository.")
+                return
+            author = args.author or "PyGit user <user@pygit.com>"
+            repo.commit(args.message, author)
+            
+
 
     except Exception as e:
         print(f"PyGit Error: {e}")
