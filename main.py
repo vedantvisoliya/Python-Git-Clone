@@ -27,7 +27,7 @@ class GitObject:
     def deserialize(cls, data: bytes) -> "GitObject":
         decompressed = zlib.decompress(data)
         null_idx = decompressed.find(b"\0")
-        header = decompressed[0:null_idx]
+        header = decompressed[0:null_idx].decode()
         content = decompressed[null_idx+1:]
 
         obj_type, size = header.split(" ")
@@ -117,7 +117,7 @@ class Commit(GitObject):
     def from_content(cls, content: bytes) -> "Commit":
         lines = content.decode().split("\n")
         tree_hash = None
-        parent_hashes = None
+        parent_hashes = []
         author = None
         committer = None
         message_start = 0
@@ -291,7 +291,8 @@ class Repository:
             self.add_directory(path)
         else:
             raise ValueError(f"{path} is neither a file nor a directory.")
-        
+    
+    # general function for loading any git object
     def load_object(self, obj_hash: str):
         obj_dir = self.objects_dir / obj_hash[:2]
         obj_file = obj_dir / obj_hash[2:]
@@ -352,7 +353,8 @@ class Repository:
             root_entries[dir_name] = dir_contents
 
         return create_tree_recursive(root_entries) 
-    
+
+    # gets current branch from the HEAD file 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
             return "master"
@@ -361,13 +363,15 @@ class Repository:
             return head_content[17:]
         
         return "HEAD" # detached HEAD
-    
+
+    # creates a file with the branch name in ref/heads/ and return the latest commit
     def get_branch_commit(self, current_branch: str):
         branch_file = self.head_dir / current_branch 
         if branch_file.exists():
             return branch_file.read_text().strip()
         return None
 
+    # rewrites the latest branch commit
     def set_branch_commit(self, current_branch: str, commit_hash: str):
         branch_file = self.head_dir / current_branch 
 
@@ -395,6 +399,7 @@ class Repository:
 
             if tree_hash == parent_commit_data.tree_hash:
                 print("nothing to commit, working tree clean.")
+                self.save_index({})
                 return None
 
         commit = Commit(
