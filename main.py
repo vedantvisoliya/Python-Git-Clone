@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 import zlib
 
 class GitObject:
