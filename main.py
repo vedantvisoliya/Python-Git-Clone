@@ -415,7 +415,11 @@ class Repository:
         self.save_index({})
         print(f"Created commit {commit_hash} on branch {current_branch}")
         return commit_hash
-    
+
+    # This function collects all file paths from a tree structure, going inside subfolders recursively.
+    # "100" = file
+    # "400" = folder
+    # It returns a set of all file names. 
     def get_files_from_tree_recursive(self, tree_hash: str, prefix: str = ""):
         files = set()
         try:
@@ -434,6 +438,9 @@ class Repository:
 
         return files
 
+    # This function rebuilds the files/folders from a tree hash onto the real disk.
+    # If it’s a file → write content
+    # If it’s a folder → make directory and go inside
     def restore_tree(self, tree_hash: str, path: Path):
         tree_obj = self.load_object(tree_hash)
         tree = Tree.from_content(tree_obj.content)
@@ -448,6 +455,12 @@ class Repository:
                 file_path.mkdir(exist_ok=True)
                 self.restore_tree(obj_hash, file_path)
 
+    # This switches your working directory to the given branch.
+    # Steps:
+    #     1. Delete old files from previous branch.  
+    #     2. Get the commit of the target branch.    
+    #     3. Recreate files from that commit’s tree.
+    #     4. Reset the index (staging area).
     def restore_working_directory(self, branch: str, files_to_clear: set[str]):
         target_commit_hash = self.get_branch_commit(branch)
         if not target_commit_hash:
@@ -471,7 +484,15 @@ class Repository:
 
         self.save_index({})
 
-    # checkout command 
+    # This is the checkout command (like git checkout).
+    # Steps:
+        # 1. Figure out which files belong to the current branch → mark them for removal.
+        # 2. If the target branch doesn’t exist:
+        # 3. If -b flag (create_branch=True) → create it from current commit.
+        # Otherwise, show error.
+
+        # 4. Switch HEAD to point to the new branch.
+        # 5. Restore working directory with files from new branch.
     def checkout(self, branch: str, create_branch: bool):
         # computed the files to clear from the previous commit
         previous_branch = self.get_current_branch()
@@ -513,6 +534,11 @@ class Repository:
         # restore working directory
         self.restore_working_directory(branch, files_to_clear)
         print(f"Switched to branch {branch}")
+
+    # get_files_from_tree_recursive → list files in a commit
+    # restore_tree → rebuild files/folders from commit
+    # restore_working_directory → reset files for a branch    
+    # checkout → switch branches (create if needed)
 
 # main function 
 def main():
