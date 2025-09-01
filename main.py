@@ -7,6 +7,12 @@ import time
 from typing import Dict, List, Tuple
 import zlib
 
+# things to improve
+# checkout a commit
+# stash
+# merge
+# tag
+
 class GitObject:
     def __init__(self, obj_type: str, content: bytes):
         self.type = obj_type
@@ -591,6 +597,124 @@ class Repository:
 
             current_commit_hash = commit.parent_hashes[0] if commit.parent_hashes else None
             count += 1
+
+    def build_index_from_tree(self, tree_hash: str, prefix: str = ""):
+        index = {}
+        try:
+            tree_obj = self.load_object(tree_hash)
+            tree = Tree.from_content(tree_obj.content)
+            for mode, name, obj_hash in tree.entries or []:
+                full_name = f"{prefix}{name}"
+                if mode.startswith("100"):
+                    index[full_name] = obj_hash
+                elif mode.startswith("400"):
+                    sub_index = self.build_index_from_tree(obj_hash, f"{full_name}/")
+                    index.update(sub_index)
+
+        except Exception as e:
+            print(f"Warning: Could not read tree {tree_hash}: {e}")
+
+        return index
+    
+    def get_all_files(self) -> List[Path]:
+        files = []
+        for item in self.path.rglob("*"):
+            if ".git" in item.parts:
+                continue
+            if ".pygit" in item.parts:
+                continue
+
+            if item.is_file():
+                files.append(item)
+        return files
+
+
+    def status(self):
+        # display what branch we are on
+        current_branch = self.get_current_branch()
+        print(f" On branch {current_branch}")
+
+        index = self.load_index()
+        current_commit_hash = self.get_branch_commit(current_branch)
+
+        # build the index of the previous/latest commit
+        last_index_file = {}
+        if current_commit_hash:
+            try:
+                commit_obj = self.load_object(current_commit_hash)
+                commit = Commit.from_content(commit_obj.content)
+                if commit.tree_hash:
+                    last_index_file = self.build_index_from_tree(commit.tree_hash)
+            except: 
+                last_index_file = {}
+
+        # figuring out all the files present within the working directory
+        working_files = {} # file -> hash
+        for item in self.get_all_files():
+            rel_path = str(item.relative_to(self.path))
+
+            try:
+                content = item.read_bytes()
+                blob = BLOB(content)
+                working_files[rel_path] = blob.hash()
+            except:
+                continue
+
+        staged_files = []
+        unstaged_files = []
+        untracked_files = []
+        deleted_files = []
+
+        # display what files are stagged for commit
+        for file_path in (set(index.keys()) | set(last_index_file.keys())):
+            index_hash = index.get(file_path)
+            last_index_hash = last_index_file.get(file_path)
+
+            if index_hash and not last_index_hash:
+                staged_files.append(("new file", file_path))
+            elif index_hash and last_index_hash and index_hash != last_index_hash:
+                staged_files.append(("modified", file_path))
+        
+        if staged_files:
+            print("\nChanges to be committed:")
+            for staged_status, file_path in sorted(staged_files):
+                print(f"    {staged_status}: {file_path}")
+
+        # display what files have modified but not staged(unstaged)
+        # check the files in the working dir and compare their hashes to files in index.
+        for file_path in working_files:
+            if file_path in index:
+                if working_files[file_path] != index[file_path]:
+                    unstaged_files.append(file_path)
+
+        if unstaged_files:
+            print("\nChanges not stagged for commit")
+            for file_path in sorted(unstaged_files):
+                print(f"    modified: {file_path}")
+
+        # display what files are untracked
+        # untracked files are files which are new files and are not stagged onces.
+        for file_path in working_files:
+            if file_path not in index and file_path not in last_index_file:
+                untracked_files.append(file_path)
+
+        if untracked_files:
+            print(f"\nUntracked Files")
+            for file_path in untracked_files:
+                print(f"    {file_path}")
+
+        # display what files have been deleted
+        for file_path in index:
+            if file_path not in working_files:
+                deleted_files.append(file_path)
+        
+        if deleted_files:
+            print(f"\nDeleted Files") 
+            for file_path in deleted_files:
+                print(f"    {file_path}")
+
+        if not staged_files and not unstaged_files and not untracked_files and not deleted_files:
+            print(f"\n      every thing is up to date, nothing to commit\n      working tree clean\n")
 
 # main function 
 def main():
