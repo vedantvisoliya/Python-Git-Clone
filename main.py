@@ -700,6 +700,12 @@ def main():
         help="Limit commits shown.",
     )
 
+    # status command
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show repository status."
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -739,10 +745,13 @@ def main():
                 print("Not a git repository")
             repo.branch(args.name, args.delete, args.create_branch)
         elif args.command == "log":
-            if not repo.git_dir.exists():
-             
+            if not repo.git_dir.exists():             
                 print("Not a git repository")
             repo.log(args.max_count)
+        elif args.command == "status":
+            if not repo.git_dir.exists():             
+                print("Not a git repository")
+            repo.status()
 
     except Exception as e:
         print(f"PyGit Error: {e}")
