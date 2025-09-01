@@ -493,7 +493,7 @@ class Repository:
 
         # 4. Switch HEAD to point to the new branch.
         # 5. Restore working directory with files from new branch.
-    def checkout(self, branch: str, create_branch: bool):
+    def checkout(self, branch: str, create_branch: bool = False):
         # computed the files to clear from the previous commit
         previous_branch = self.get_current_branch()
         files_to_clear = set()
@@ -540,22 +540,25 @@ class Repository:
     # restore_working_directory → reset files for a branch    
     # checkout → switch branches (create if needed)
 
-    def branch(self, branch_name: str, delete: bool = False):
+    def branch(self, branch_name: str, delete: bool = False, create_branch: bool = False):
         if delete and branch_name:
             branch_file = self.head_dir / branch_name
             if branch_file.exists():
+                if branch_file.name == "master":
+                    print("Cannot delete master branch.")
+                    return
                 branch_file.unlink()
                 print(f"Deleted branch {branch_name}.")
+                self.checkout("master")
             else:
                 print(f"Branch {branch_name} not found")
             return
 
         current_branch = self.get_current_branch()
-        if branch_name:
+        if branch_name and create_branch:
             current_commit = self.get_branch_commit(current_branch)
             if current_commit:
-                self.set_branch_commit(current_branch, current_commit)
-                print(f"Created a branch {branch_name}")
+                self.checkout(branch_name, create_branch)
             else:
                 print(f"No commits yet, cannot create a new branch.")
         else:
@@ -566,7 +569,7 @@ class Repository:
                 
             for branch in sorted(branches):
                 current_marker = "* " if branch == current_branch else "  "
-                print(f"{current_marker}{branch}") 
+                print(f"{current_marker}{branch}")
 
 # main function 
 def main():
@@ -698,9 +701,7 @@ def main():
         elif args.command == "branch":
             if not repo.git_dir.exists():
                 print("Not a git repository")
-            repo.branch(args.name, args.delete)
-
-        
+            repo.branch(args.name, args.delete, args.create_branch)
 
     except Exception as e:
         print(f"PyGit Error: {e}")
