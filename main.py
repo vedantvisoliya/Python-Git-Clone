@@ -571,6 +571,27 @@ class Repository:
                 current_marker = "* " if branch == current_branch else "  "
                 print(f"{current_marker}{branch}")
 
+    def log(self, max_count: int = 10):
+        current_branch = self.get_current_branch()
+        current_commit_hash = self.get_branch_commit(current_branch)
+
+        if not current_commit_hash:
+            print("No commits yet!")
+            return
+        
+        count = 0
+        while current_commit_hash and count < max_count:
+            commit_obj = self.load_object(current_commit_hash)
+            commit = Commit.from_content(commit_obj.content)
+
+            print(f"commit {current_commit_hash}")
+            print(f"Author: {commit.author}")
+            print(f"Date: {time.ctime(commit.timestamp)}")
+            print(f"\n      {commit.message}\n")
+
+            current_commit_hash = commit.parent_hashes[0] if commit.parent_hashes else None
+            count += 1
+
 # main function 
 def main():
 
@@ -664,6 +685,21 @@ def main():
         help="Deletes a branch.",
     )
 
+    # log command
+
+    log_parser = subparsers.add_parser(
+        "log",
+        help="Show commit history."
+    )
+
+    log_parser.add_argument(
+        "-n",
+        "--max-count",
+        type=int,
+        default=10,
+        help="Limit commits shown.",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -702,6 +738,11 @@ def main():
             if not repo.git_dir.exists():
                 print("Not a git repository")
             repo.branch(args.name, args.delete, args.create_branch)
+        elif args.command == "log":
+            if not repo.git_dir.exists():
+             
+                print("Not a git repository")
+            repo.log(args.max_count)
 
     except Exception as e:
         print(f"PyGit Error: {e}")
