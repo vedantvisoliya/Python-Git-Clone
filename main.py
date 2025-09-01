@@ -540,6 +540,34 @@ class Repository:
     # restore_working_directory → reset files for a branch    
     # checkout → switch branches (create if needed)
 
+    def branch(self, branch_name: str, delete: bool = False):
+        if delete and branch_name:
+            branch_file = self.head_dir / branch_name
+            if branch_file.exists():
+                branch_file.unlink()
+                print(f"Deleted branch {branch_name}.")
+            else:
+                print(f"Branch {branch_name} not found")
+            return
+
+        current_branch = self.get_current_branch()
+        if branch_name:
+            current_commit = self.get_branch_commit(current_branch)
+            if current_commit:
+                self.set_branch_commit(current_branch, current_commit)
+                print(f"Created a branch {branch_name}")
+            else:
+                print(f"No commits yet, cannot create a new branch.")
+        else:
+            branches = []
+            for branch_file in self.head_dir.iterdir():
+                if branch_file.is_file() and not branch_file.name.startswith("."):
+                    branches.append(branch_file.name)
+                
+            for branch in sorted(branches):
+                current_marker = "* " if branch == current_branch else "  "
+                print(f"{current_marker}{branch}") 
+
 # main function 
 def main():
 
@@ -610,6 +638,29 @@ def main():
         help="Branch to move in."
     )
 
+    # branch command
+    branch_parser = subparsers.add_parser(
+        "branch",
+        help="List or manage branches."
+    )
+
+    branch_parser.add_argument(
+        "name",
+        nargs="?"
+    )
+
+    branch_parser.add_argument(
+        "-b", "--create-branch",
+        action="store_true",
+        help="Create a new branch."
+    )
+
+    branch_parser.add_argument(
+        "-d", "--delete",
+        action="store_true",
+        help="Deletes a branch.",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -644,6 +695,12 @@ def main():
                 print("Not a git repository.")
                 return
             repo.checkout(args.branch, args.create_branch)
+        elif args.command == "branch":
+            if not repo.git_dir.exists():
+                print("Not a git repository")
+            repo.branch(args.name, args.delete)
+
+        
 
     except Exception as e:
         print(f"PyGit Error: {e}")
